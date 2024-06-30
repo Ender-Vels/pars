@@ -226,10 +226,6 @@ if st.button("Запустити програму"):
     else:
         try:
             st.session_state.is_running = True
-            client = Client(api_key, api_secret)
-            account_info = client.get_account()
-            print(f"Успішно підключено до API. Баланс вашого портфеля: {account_info}")
-            
             trading_thread = threading.Thread(target=start_trading, args=(api_key, api_secret))
             trading_thread.daemon = True
             trading_thread.start()
