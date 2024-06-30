@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 import time
 import hmac
 import hashlib
-import json
 from urllib.parse import urlencode
 import datetime
 
@@ -44,17 +43,36 @@ def get_trader_trades(trader_link):
     response = requests.get(trader_link)
     soup = BeautifulSoup(response.content, 'html.parser')
     trades = []
-    # Parsing logic based on the HTML structure of the trader's page
-    # This will vary depending on the exact structure of the page
-    # Example:
-    # trade_elements = soup.select('trade-selector')
-    # for trade_element in trade_elements:
-    #     trades.append({
-    #         "time": trade_element.select_one('time-selector').text,
-    #         "symbol": trade_element.select_one('symbol-selector').text,
-    #         "side": trade_element.select_one('side-selector').text,
-    #         ...
-    #     })
+
+    # Assuming the HTML structure and CSS selectors for trade elements
+    trade_elements = soup.select('trade-selector')
+    for trade_element in trade_elements:
+        trade_time = trade_element.select_one('time-selector').text.strip()
+        symbol = trade_element.select_one('symbol-selector').text.strip()
+        side = trade_element.select_one('side-selector').text.strip()
+        quantity = float(trade_element.select_one('quantity-selector').text.strip())
+        price = float(trade_element.select_one('price-selector').text.strip())
+        fee = float(trade_element.select_one('fee-selector').text.strip())
+        realized_profit = float(trade_element.select_one('realized-profit-selector').text.strip())
+        base_asset = trade_element.select_one('base-asset-selector').text.strip()
+        qty = float(trade_element.select_one('qty-selector').text.strip())
+        position_side = trade_element.select_one('position-side-selector').text.strip()
+        active_buy = trade_element.select_one('active-buy-selector').text.strip()
+
+        trades.append({
+            "time": trade_time,
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "price": price,
+            "fee": fee,
+            "realizedProfit": realized_profit,
+            "baseAsset": base_asset,
+            "qty": qty,
+            "positionSide": position_side,
+            "activeBuy": active_buy
+        })
+
     return trades
 
 def aggregate_trades(trades):
@@ -72,7 +90,7 @@ def aggregate_trades(trades):
     return list(aggregated_trades.values())
 
 def execute_trade(trade, position_side):
-    side = "BUY" if trade["side"] == "Open long" else "SELL"
+    side = "BUY" if trade["side"] in ["Open long", "Buy/long"] else "SELL"
     if reverse_trades:
         side = "SELL" if side == "BUY" else "BUY"
     params = {
