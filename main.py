@@ -22,7 +22,11 @@ update_interval = st.number_input("Update Interval (seconds)", min_value=1, step
 client = None
 if api_key and api_secret:
     try:
+        st.write("Ініціалізація клієнта Binance...")
         client = Client(api_key, api_secret)
+        # Виконання тестового запиту для перевірки ключів
+        client.get_account()
+        st.success("Клієнт Binance ініціалізований успішно.")
     except Exception as e:
         st.error(f"Помилка ініціалізації Binance клієнта: {e}")
 
@@ -30,6 +34,7 @@ def get_trade_history(link):
     try:
         response = requests.get(link)
         response.raise_for_status()
+        st.write("Отримано відповідь від сервера: ", response.text)  # Додано відладкове повідомлення
         return response.json()
     except JSONDecodeError as e:
         st.error(f"Помилка декодування JSON: {e}")
