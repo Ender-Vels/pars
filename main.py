@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from binance.client import Client
 import threading
 
+# Введення API ключа та секретного ключа
+st.sidebar.header("API ключі")
+api_key = st.sidebar.text_input("API ключ")
+api_secret = st.sidebar.text_input("Секретний ключ", type="password")
+
 # Встановлення параметрів копіювання угод
 st.header("Налаштування копіювання угод")
 trader_url = st.text_input("Посилання на трейдера")
@@ -66,7 +71,7 @@ def get_trade_volume(trade, trader_balance, user_balance):
     return (trade["quantity"] * user_balance / trader_balance) * multiplier
 
 # Функція для відкриття угоди
-def open_trade(trade, trade_volume, leverage, symbol, side, position_side):
+def open_trade(client, trade, trade_volume, leverage, symbol, side, position_side):
     try:
         if close_only_mode and (trade["side"] == "Open long" or trade["side"] == "Open short"):
             return
@@ -133,7 +138,8 @@ def open_trade(trade, trade_volume, leverage, symbol, side, position_side):
         st.write(f"Помилка під час відкриття угоди: {str(e)}")
 
 # Функція для основного циклу копіювання угод
-def start_trading():
+def start_trading(api_key, api_secret):
+    client = Client(api_key, api_secret)
     while True:
         try:
             trade_data = parse_trade_history(trader_url)
@@ -143,7 +149,7 @@ def start_trading():
                 trade_volume = get_trade_volume(trade, trader_balance, user_balance)
                 side = "BUY"
                 position_side = "LONG"
-                open_trade(trade, trade_volume, leverage, symbol, side, position_side)
+                open_trade(client, trade, trade_volume, leverage, symbol, side, position_side)
             time.sleep(5)
         except Exception as e:
             st.write(f"Помилка в основному циклі програми: {str(e)}")
@@ -154,16 +160,14 @@ if st.button("Запустити програму"):
         st.warning("Будь ласка, введіть всі необхідні дані")
     else:
         try:
-            client = Client(api_key, api_secret)
-            st.success("Підключення до API успішно")
-            trading_thread = threading.Thread(target=start_trading)
+            trading_thread = threading.Thread(target=start_trading, args=(api_key, api_secret))
             trading_thread.daemon = True
             trading_thread.start()
             st.success("Програма запущена у фоновому режимі")
         except Exception as e:
             st.error(f"Помилка підключення до API: {str(e)}")
 
-# Виведення інформації про налаштування
+# Виведення інформації про налаштування копіювання угод
 if trader_url:
     st.write(f"Посилання на трейдера: {trader_url}")
     st.write(f"Баланс трейдера: {trader_balance}")
