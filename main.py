@@ -37,13 +37,16 @@ def parse_trade_history(trader_url):
     try:
         response = requests.get(trader_url)
         response.raise_for_status()  # Піднімає помилку, якщо HTTP-відповідь не 200 OK
-        html = response.text
-        start_index = html.find('"trades":') + len('"trades":')
-        end_index = html.find(']"', start_index) + 1
-        trade_data = html[start_index:end_index]
-        trade_data = json.loads(trade_data)
-        return trade_data
-    except (requests.RequestException, json.JSONDecodeError) as e:
+        
+        # Перевірка, що отримана відповідь є валідним JSON
+        try:
+            trade_data = response.json()
+            return trade_data
+        except json.JSONDecodeError as e:
+            st.write(f"Помилка декодування JSON: {str(e)}")
+            return []
+            
+    except requests.RequestException as e:
         st.write(f"Помилка при отриманні даних з трейдера: {str(e)}")
         return []
 
