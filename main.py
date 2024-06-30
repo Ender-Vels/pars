@@ -137,6 +137,47 @@ def open_trade(client, trade, trade_volume, leverage, symbol, side, position_sid
     except Exception as e:
         st.write(f"Помилка під час відкриття угоди: {str(e)}")
 
+# Функція для закриття угоди
+def close_trade(client, trade, symbol, side, position_side):
+    try:
+        if reverse_mode:
+            if trade["side"] in ["Open long", "Buy/long"]:
+                side = "SELL"
+                position_side = "SHORT"
+            elif trade["side"] in ["Close long", "Sell/Short"]:
+                side = "BUY"
+                position_side = "SHORT"
+            elif trade["side"] in ["Open short", "Buy/short"]:
+                side = "BUY"
+                position_side = "LONG"
+            elif trade["side"] in ["Close short", "Buy/Long"]:
+                side = "SELL"
+                position_side = "LONG"
+        
+        # Опції закриття угоди
+        if trade["side"] in ["Close long", "Sell/Short"]:
+            order = client.create_margin_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade["quantity"],
+                positionSide=position_side,
+                isIsolated="false"
+            )
+            st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
+        elif trade["side"] in ["Close short", "Buy/Long"]:
+            order = client.create_margin_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade["quantity"],
+                positionSide=position_side,
+                isIsolated="false"
+            )
+            st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
+    except Exception as e:
+        st.write(f"Помилка під час закриття угоди: {str(e)}")
+
 # Функція для основного циклу копіювання угод
 def start_trading(api_key, api_secret):
     client = Client(api_key, api_secret)
@@ -149,7 +190,14 @@ def start_trading(api_key, api_secret):
                 trade_volume = get_trade_volume(trade, trader_balance, user_balance)
                 side = "BUY"
                 position_side = "LONG"
-                open_trade(client, trade, trade_volume, leverage, symbol, side, position_side)
+                
+                if trade["side"] in ["Close long", "Sell/Short"]:
+                    close_trade(client, trade, symbol, side, position_side)
+                elif trade["side"] in ["Close short", "Buy/Long"]:
+                    close_trade(client, trade, symbol, side, position_side)
+                else:
+                    open_trade(client, trade, trade_volume, leverage, symbol, side, position_side)
+                    
             time.sleep(5)
         except Exception as e:
             st.write(f"Помилка в основному циклі програми: {str(e)}")
