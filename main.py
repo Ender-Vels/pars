@@ -8,17 +8,29 @@ import threading
 
 # Введення API ключа та секретного ключа
 st.sidebar.header("API ключі")
-api_key = st.sidebar.text_input("API ключ")
-api_secret = st.sidebar.text_input("Секретний ключ", type="password")
+api_key = st.sidebar.text_input("API ключ", value=st.session_state.get('api_key', ''))
+api_secret = st.sidebar.text_input("Секретний ключ", type="password", value=st.session_state.get('api_secret', ''))
+
+# Збереження значень у стані сесії
+st.session_state.api_key = api_key
+st.session_state.api_secret = api_secret
 
 # Встановлення параметрів копіювання угод
 st.header("Налаштування копіювання угод")
-trader_url = st.text_input("Посилання на трейдера")
-trader_balance = st.number_input("Баланс трейдера", min_value=0.00)
-user_balance = st.number_input("Баланс власного портфеля", min_value=0.00)
-leverage = st.number_input("Кредитне плече", min_value=1.00)
-close_only_mode = st.checkbox("Тільки закриття угод")
-reverse_mode = st.checkbox("Копіювати угоди в зворотньому напрямку")
+trader_url = st.text_input("Посилання на трейдера", value=st.session_state.get('trader_url', ''))
+trader_balance = st.number_input("Баланс трейдера", min_value=0.00, value=st.session_state.get('trader_balance', 0.0))
+user_balance = st.number_input("Баланс власного портфеля", min_value=0.00, value=st.session_state.get('user_balance', 0.0))
+leverage = st.number_input("Кредитне плече", min_value=1.00, value=st.session_state.get('leverage', 1.0))
+close_only_mode = st.checkbox("Тільки закриття угод", value=st.session_state.get('close_only_mode', False))
+reverse_mode = st.checkbox("Копіювати угоди в зворотньому напрямку", value=st.session_state.get('reverse_mode', False))
+
+# Збереження значень у стані сесії
+st.session_state.trader_url = trader_url
+st.session_state.trader_balance = trader_balance
+st.session_state.user_balance = user_balance
+st.session_state.leverage = leverage
+st.session_state.close_only_mode = close_only_mode
+st.session_state.reverse_mode = reverse_mode
 
 # Функція для парсингу даних з веб-сторінки трейдера
 def parse_trade_history(trader_url):
