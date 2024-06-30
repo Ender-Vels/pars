@@ -4,6 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from binance.client import Client
+from binance.enums import *
 import threading
 
 # Введення API ключа та секретного ключа
@@ -15,7 +16,7 @@ api_secret = st.sidebar.text_input("Секретний ключ", type="password
 def check_api_keys(api_key, api_secret):
     try:
         client = Client(api_key, api_secret)
-        client.get_account()
+        client.futures_account()
         return True
     except Exception as e:
         st.error(f"Помилка валідації API ключів: {str(e)}")
@@ -102,46 +103,42 @@ def open_trade(client, trade, trade_volume, leverage, symbol, side, position_sid
         # Опції відкриття угоди
         if trade["side"] in ["Open long", "Buy/long"]:
             if trade["realizedProfit"] == 0.0000000 and datetime.now() - timedelta(minutes=1) < datetime.fromtimestamp(int(trade["time"]) / 1000):
-                order = client.create_margin_order(
+                order = client.futures_create_order(
                     symbol=symbol,
                     side=side,
                     type='MARKET',
                     quantity=trade_volume,
-                    positionSide=position_side,
-                    isIsolated="false"
+                    positionSide=position_side
                 )
                 st.write(f"Відкрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Close long", "Sell/Short"]:
             if trade["realizedProfit"] != 0.0000000:
-                order = client.create_margin_order(
+                order = client.futures_create_order(
                     symbol=symbol,
                     side=side,
                     type='MARKET',
                     quantity=trade_volume,
-                    positionSide=position_side,
-                    isIsolated="false"
+                    positionSide=position_side
                 )
                 st.write(f"Закрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Open short", "Buy/short"]:
             if trade["realizedProfit"] == 0.0000000 and datetime.now() - timedelta(minutes=1) < datetime.fromtimestamp(int(trade["time"]) / 1000):
-                order = client.create_margin_order(
+                order = client.futures_create_order(
                     symbol=symbol,
                     side=side,
                     type='MARKET',
                     quantity=trade_volume,
-                    positionSide=position_side,
-                    isIsolated="false"
+                    positionSide=position_side
                 )
                 st.write(f"Відкрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Close short", "Buy/Long"]:
             if trade["realizedProfit"] != 0.0000000:
-                order = client.create_margin_order(
+                order = client.futures_create_order(
                     symbol=symbol,
                     side=side,
                     type='MARKET',
                     quantity=trade_volume,
-                    positionSide=position_side,
-                    isIsolated="false"
+                    positionSide=position_side
                 )
                 st.write(f"Закрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
     except Exception as e:
@@ -166,23 +163,21 @@ def close_trade(client, trade, symbol, side, position_side):
         
         # Опції закриття угоди
         if trade["side"] in ["Close long", "Sell/Short"]:
-            order = client.create_margin_order(
+            order = client.futures_create_order(
                 symbol=symbol,
                 side=side,
                 type='MARKET',
                 quantity=trade["quantity"],
-                positionSide=position_side,
-                isIsolated="false"
+                positionSide=position_side
             )
             st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Close short", "Buy/Long"]:
-            order = client.create_margin_order(
+            order = client.futures_create_order(
                 symbol=symbol,
                 side=side,
                 type='MARKET',
                 quantity=trade["quantity"],
-                positionSide=position_side,
-                isIsolated="false"
+                positionSide=position_side
             )
             st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
     except Exception as e:
