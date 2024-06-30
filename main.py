@@ -11,6 +11,16 @@ st.sidebar.header("API ключі")
 api_key = st.sidebar.text_input("API ключ")
 api_secret = st.sidebar.text_input("Секретний ключ", type="password")
 
+# Функція для перевірки працездатності ключів
+def check_api_keys(api_key, api_secret):
+    try:
+        client = Client(api_key, api_secret)
+        client.get_account()
+        return True
+    except Exception as e:
+        st.error(f"Помилка валідації API ключів: {str(e)}")
+        return False
+
 # Встановлення параметрів копіювання угод
 st.header("Налаштування копіювання угод")
 trader_url = st.text_input("Посилання на трейдера")
@@ -211,6 +221,8 @@ def stop_trading():
 if st.button("Запустити програму"):
     if not (api_key and api_secret and trader_url):
         st.warning("Будь ласка, введіть всі необхідні дані")
+    elif not check_api_keys(api_key, api_secret):
+        st.warning("Недійсні API ключі")
     else:
         try:
             st.session_state.is_running = True
