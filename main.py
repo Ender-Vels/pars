@@ -202,18 +202,29 @@ def start_trading(api_key, api_secret):
         except Exception as e:
             st.write(f"Помилка в основному циклі програми: {str(e)}")
 
+# Функція для зупинки основного циклу
+def stop_trading():
+    st.session_state.is_running = False
+    st.success("Програма зупинена")
+
 # Кнопка запуску програми
 if st.button("Запустити програму"):
     if not (api_key and api_secret and trader_url):
         st.warning("Будь ласка, введіть всі необхідні дані")
     else:
         try:
+            st.session_state.is_running = True
             trading_thread = threading.Thread(target=start_trading, args=(api_key, api_secret))
             trading_thread.daemon = True
             trading_thread.start()
             st.success("Програма запущена у фоновому режимі")
         except Exception as e:
             st.error(f"Помилка підключення до API: {str(e)}")
+
+# Кнопка зупинки програми
+if st.button("Зупинити програму"):
+    if hasattr(st.session_state, 'is_running') and st.session_state.is_running:
+        stop_trading()
 
 # Виведення інформації про налаштування копіювання угод
 if trader_url:
