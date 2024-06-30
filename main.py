@@ -1,130 +1,182 @@
 import streamlit as st
 import requests
-from bs4 import BeautifulSoup
+import json
 import time
-import hmac
-import hashlib
-from urllib.parse import urlencode
-import datetime
+from datetime import datetime, timedelta
+from binance.client import Client
 
-# Streamlit UI
-st.title("Binance Copy Trading Bot")
-st.write("Automatically copy trades from a Binance trader and execute them in your portfolio.")
+# Встановлення API ключів
+st.sidebar.header("API ключі")
+api_key = st.sidebar.text_input("API ключ")
+api_secret = st.sidebar.text_input("Секретний ключ")
+client = Client(api_key, api_secret)
 
-api_key = st.text_input("Your Binance API Key")
-api_secret = st.text_input("Your Binance API Secret", type="password")
-trader_link = st.text_input("Trader Portfolio Link")
-leverage = st.number_input("Leverage", min_value=1, max_value=125, value=1)
-trader_portfolio_value = st.number_input("Trader Portfolio Value", min_value=0.0, value=1000.0)
-your_portfolio_value = st.number_input("Your Portfolio Value", min_value=0.0, value=1000.0)
+# Встановлення параметрів
+st.header("Налаштування копіювання")
+trader_url = st.text_input("Посилання на трейдера")
+trader_balance = st.number_input("Баланс трейдера", min_value=0.00)
+user_balance = st.number_input("Баланс власного портфеля", min_value=0.00)
+leverage = st.number_input("Кредитне плече", min_value=1.00)
+close_only_mode = st.checkbox("Тільки закриття угод")
+reverse_mode = st.checkbox("Копіювання угод в зворотному напрямку")
 
-only_close_trades = st.checkbox("Only Close Trades")
-reverse_trades = st.checkbox("Reverse Trades")
+# Функція для парсингу даних з розділу "Мережа" на сторінці трейдера
+def parse_trade_history(trader_url):
+    response = requests.get(trader_url)
+    html = response.text
+    start_index = html.find('"trades":') + len('"trades":')
+    end_index = html.find(']"', start_index) + 1
+    trade_data = html[start_index:end_index]
+    trade_data = json.loads(trade_data)
+    return trade_data
 
-start_button = st.button("Start Copy Trading")
-
-# Binance API endpoints
-base_url = "https://api.binance.com"
-
-def create_signature(query_string, secret):
-    return hmac.new(secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-
-def binance_request(method, endpoint, params=None):
-    headers = {
-        "X-MBX-APIKEY": api_key
+# Функція для об'єднання дрібних транзакцій в одну угоду
+def aggregate_trades(trade_data, time_interval):
+    aggregated_trades = []
+    current_trade = {
+        "time": 0,
+        "symbol": "",
+        "side": "",
+        "quantity": 0,
+        "quantityAsset": ""
     }
-    query_string = urlencode(params) if params else ''
-    signature = create_signature(query_string, api_secret)
-    url = f"{base_url}{endpoint}?{query_string}&signature={signature}"
-    response = requests.request(method, url, headers=headers)
-    return response.json()
+    last_trade_time = 0
+    for trade in trade_data:
+        trade_time = int(trade["time"]) / 1000
+        if trade_time - last_trade_time > time_interval:
+            if current_trade["quantity"] != 0:
+                aggregated_trades.append(current_trade)
+            current_trade = {
+                "time": trade_time,
+                "symbol": trade["symbol"],
+                "side": trade["side"],
+                "quantity": trade["quantity"],
+                "quantityAsset": trade["quantityAsset"]
+            }
+        else:
+            current_trade["quantity"] += trade["quantity"]
+        last_trade_time = trade_time
+    if current_trade["quantity"] != 0:
+        aggregated_trades.append(current_trade)
+    return aggregated_trades
 
-def get_trader_trades(trader_link):
-    response = requests.get(trader_link)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    trades = []
+# Функція для отримання об'єму угоди
+def get_trade_volume(trade, trader_balance, user_balance):
+    if trade["side"] == "Open long" or trade["side"] == "Buy/long" or trade["side"] == "Open short" or trade["side"] == "Buy/short":
+        return (trade["quantity"] * user_balance) / trader_balance
+    else:
+        return ((trade["quantity"] * user_balance) / trader_balance) * 1.05
 
-    # Assuming the HTML structure and CSS selectors for trade elements
-    trade_elements = soup.select('trade-selector')
-    for trade_element in trade_elements:
-        trade_time = trade_element.select_one('time-selector').text.strip()
-        symbol = trade_element.select_one('symbol-selector').text.strip()
-        side = trade_element.select_one('side-selector').text.strip()
-        quantity = float(trade_element.select_one('quantity-selector').text.strip())
-        price = float(trade_element.select_one('price-selector').text.strip())
-        fee = float(trade_element.select_one('fee-selector').text.strip())
-        realized_profit = float(trade_element.select_one('realized-profit-selector').text.strip())
-        base_asset = trade_element.select_one('base-asset-selector').text.strip()
-        qty = float(trade_element.select_one('qty-selector').text.strip())
-        position_side = trade_element.select_one('position-side-selector').text.strip()
-        active_buy = trade_element.select_one('active-buy-selector').text.strip()
+# Функція для відкриття угоди
+def open_trade(trade, trade_volume, leverage, symbol, side, position_side):
+    if close_only_mode and (trade["side"] == "Open long" or trade["side"] == "Open short"):
+        return
+    if reverse_mode:
+        if trade["side"] == "Open long" or trade["side"] == "Buy/long":
+            side = "SELL"
+            position_side = "SHORT"
+        elif trade["side"] == "Close long" or trade["side"] == "Sell/Short":
+            side = "BUY"
+            position_side = "SHORT"
+        elif trade["side"] == "Open short" or trade["side"] == "Buy/short":
+            side = "BUY"
+            position_side = "LONG"
+        elif trade["side"] == "Close short" or trade["side"] == "Buy/Long":
+            side = "SELL"
+            position_side = "LONG"
+    # Перевірка умов відкриття угоди
+    if trade["side"] == "Open long" or trade["side"] == "Buy/long":
+        if trade["realizedProfit"] == 0.0000000 and datetime.now() - timedelta(minutes=1) < datetime.fromtimestamp(int(trade["time"]) / 1000):
+            order = client.create_margin_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade_volume,
+                positionSide=position_side,
+                isIsolated="false"
+            )
+            st.write(f"Відкрито {trade_volume} {trade['quantityAsset']} {position_side} по {symbol}")
+    elif trade["side"] == "Close long" or trade["side"] == "Sell/Short":
+        if trade["realizedProfit"] != 0.0000000:
+            order = client.create_margin_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade_volume,
+                positionSide=position_side,
+                isIsolated="false"
+            )
+            st.write(f"Закрито {trade_volume} {trade['quantityAsset']} {position_side} по {symbol}")
+    elif trade["side"] == "Open short" or trade["side"] == "Buy/short":
+        if trade["realizedProfit"] == 0.0000000 and datetime.now() - timedelta(minutes=1) < datetime.fromtimestamp(int(trade["time"]) / 1000):
+            order = client.create_margin_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade_volume,
+                positionSide=position_side,
+                isIsolated="false"
+            )
+            st.write(f"Відкрито {trade_volume} {trade['quantityAsset']} {position_side} по {symbol}")
+    elif trade["side"] == "Close short" or trade["side"] == "Buy/Long":
+        if trade["realizedProfit"] != 0.0000000:
+            order = client.create_margin_order(
+                symbol=symbol,
+                side=side,
+                type='MARKET',
+                quantity=trade_volume,
+                positionSide=position_side,
+                isIsolated="false"
+            )
+            st.write(f"Закрито {trade_volume} {trade['quantityAsset']} {position_side} по {symbol}")
 
-        trades.append({
-            "time": trade_time,
-            "symbol": symbol,
-            "side": side,
-            "quantity": quantity,
-            "price": price,
-            "fee": fee,
-            "realizedProfit": realized_profit,
-            "baseAsset": base_asset,
-            "qty": qty,
-            "positionSide": position_side,
-            "activeBuy": active_buy
-        })
+# Основний цикл програми
+if api_key and api_secret:
+    # Встановлення максимального кредитного плеча
+    client.API_URL = 'https://api.binance.com'
+    try:
+        response = client.post('/sapi/v1/margin/max-leverage', data={'symbol': 'BTCUSDT', 'leverage': leverage})
+        if response:
+            st.write(f"Кредитне плече успішно встановлено: {leverage}")
+        else:
+            st.write(f"Помилка встановлення кредитного плеча: {response}")
+    except Exception as e:
+        st.write(f"Помилка: {e}")
 
-    return trades
+    # Додаємо кнопку запуску/зупинки
+    is_running = False
+    start_button = st.button("Запустити парсинг")
+    stop_button = st.button("Зупинити парсинг")
 
-def aggregate_trades(trades):
-    aggregated_trades = {}
-    current_time = int(time.time() * 1000)
-    for trade in trades:
-        trade_time = int(datetime.datetime.strptime(trade["time"], '%Y-%m-%d %H:%M:%S').timestamp() * 1000)
-        if current_time - trade_time <= 2000:
-            key = (trade["symbol"], trade["side"])
-            if key not in aggregated_trades:
-                aggregated_trades[key] = trade
-            else:
-                aggregated_trades[key]["quantity"] += trade["quantity"]
-                aggregated_trades[key]["price"] = (aggregated_trades[key]["price"] + trade["price"]) / 2
-    return list(aggregated_trades.values())
-
-def execute_trade(trade, position_side):
-    side = "BUY" if trade["side"] in ["Open long", "Buy/long"] else "SELL"
-    if reverse_trades:
-        side = "SELL" if side == "BUY" else "BUY"
-    params = {
-        "symbol": trade["symbol"],
-        "side": side,
-        "type": "MARKET",
-        "quantity": trade["quantity"],
-        "positionSide": position_side,
-        "timestamp": int(time.time() * 1000)
-    }
-    response = binance_request("POST", "/api/v3/order", params)
-    return response
-
-def main():
     if start_button:
-        last_trade_time = 0
-        while True:
-            trades = get_trader_trades(trader_link)
-            new_trades = [trade for trade in trades if int(datetime.datetime.strptime(trade["time"], '%Y-%m-%d %H:%M:%S').timestamp() * 1000) > last_trade_time]
-            if new_trades:
-                aggregated_trades = aggregate_trades(new_trades)
-                for trade in aggregated_trades:
-                    if trade["side"] in ["Open long", "Buy/long"]:
-                        if not only_close_trades:
-                            execute_trade(trade, "LONG")
-                    elif trade["side"] in ["Close long", "Sell/Short"]:
-                        execute_trade(trade, "LONG")
-                    elif trade["side"] in ["Open short", "Buy/long"]:
-                        if not only_close_trades:
-                            execute_trade(trade, "SHORT")
-                    elif trade["side"] in ["Close short", "Buy/Long"]:
-                        execute_trade(trade, "SHORT")
-                last_trade_time = int(datetime.datetime.strptime(new_trades[-1]["time"], '%Y-%m-%d %H:%M:%S').timestamp() * 1000)
-            time.sleep(2)
+        is_running = True
+        st.write("Парсинг запущено!")
 
-if __name__ == "__main__":
-    main()
+    if stop_button:
+        is_running = False
+        st.write("Парсинг зупинено!")
+
+    while is_running:
+        # Парсинг даних з розділу "Мережа"
+        try:
+            trade_data = parse_trade_history(trader_url)
+            aggregated_trades = aggregate_trades(trade_data, 2)
+            for trade in aggregated_trades:
+                symbol = trade["symbol"]
+                trade_volume = get_trade_volume(trade, trader_balance, user_balance)
+                # Визначення бокової позиції (LONG/SHORT) та типу угоди (BUY/SELL)
+                side = "BUY"
+                position_side = "LONG"
+                open_trade(trade, trade_volume, leverage, symbol, side, position_side)
+            time.sleep(5)
+        except Exception as e:
+            st.write(f"Помилка: {e}")
+
+# Вивід інформації
+if trader_url:
+    st.write(f"Посилання на трейдера: {trader_url}")
+    st.write(f"Баланс трейдера: {trader_balance}")
+    st.write(f"Баланс власного портфеля: {user_balance}")
+    st.write(f"Кредитне плече: {leverage}")
+    st.write(f"Тільки закриття угод: {close_only_mode}")
+    st.write(f"Копіювання угод в зворотному напрямку: {reverse_mode}")
