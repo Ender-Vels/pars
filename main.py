@@ -3,6 +3,7 @@ import requests
 import time
 from binance.client import Client
 from binance.enums import SIDE_BUY, SIDE_SELL
+from requests.exceptions import JSONDecodeError
 
 # Введіть ваші Binance API ключі тут
 api_key = st.text_input("Binance API Key")
@@ -18,16 +19,23 @@ your_portfolio_size = st.number_input("Your Portfolio Size", min_value=0.0, step
 update_interval = st.number_input("Update Interval (seconds)", min_value=1, step=1, value=2)
 
 # Ініціалізація Binance клієнта
+client = None
 if api_key and api_secret:
-    client = Client(api_key, api_secret)
+    try:
+        client = Client(api_key, api_secret)
+    except Exception as e:
+        st.error(f"Помилка ініціалізації Binance клієнта: {e}")
 
 def get_trade_history(link):
-    response = requests.get(link)
-    if response.status_code == 200:
+    try:
+        response = requests.get(link)
+        response.raise_for_status()
         return response.json()
-    else:
-        st.error("Не вдалося отримати дані з посилання.")
-        return None
+    except JSONDecodeError as e:
+        st.error(f"Помилка декодування JSON: {e}")
+    except requests.RequestException as e:
+        st.error(f"Помилка HTTP запиту: {e}")
+    return None
 
 def copy_trades(trades):
     for trade in trades:
@@ -48,9 +56,11 @@ def copy_trades(trades):
         except Exception as e:
             st.error(f"Помилка при виконанні угоди: {e}")
 
-if st.button("Start Copy Trading"):
+if st.button("Start Copy Trading") and client:
     while True:
         trade_history = get_trade_history(portfolio_link)
         if trade_history:
             copy_trades(trade_history)
         time.sleep(update_interval)
+else:
+    st.warning("Будь ласка, введіть валідні API ключі та посилання на портфель трейдера.")
