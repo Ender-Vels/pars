@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from binance.client import Client
 from binance.enums import *
 import threading
-
+'''
 # Введення API ключа та секретного ключа
 st.sidebar.header("API ключі")
 api_key = st.sidebar.text_input("API ключ")
@@ -241,3 +241,39 @@ if trader_url:
     st.write(f"Кредитне плече: {leverage}")
     st.write(f"Тільки закриття угод: {'Так' if close_only_mode else 'Ні'}")
     st.write(f"Копіювати угоди в зворотньому напрямку: {'Так' if reverse_mode else 'Ні'}")
+    '''
+
+
+# Function to fetch data from the futures wallet API
+def fetch_futures_wallet(api_url, headers):
+    response = requests.get(api_url, headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error("Failed to fetch data from the API")
+        return None
+
+# Function to display the fetched data
+def display_wallet_data(wallet_data):
+    st.title("Futures Wallet Data")
+
+    if wallet_data:
+        st.subheader("Wallet Information")
+        st.json(wallet_data)
+    else:
+        st.error("No data to display")
+
+# Main function to run the Streamlit app
+def main():
+    st.sidebar.title("Futures Wallet Checker")
+
+    api_url = st.sidebar.text_input("API URL", "https://api.example.com/futures_wallet")
+    api_key = st.sidebar.text_input("API Key", type="password")
+
+    if st.sidebar.button("Fetch Wallet Data"):
+        headers = {"Authorization": f"Bearer {api_key}"}
+        wallet_data = fetch_futures_wallet(api_url, headers)
+        display_wallet_data(wallet_data)
+
+if __name__ == "__main__":
+    main()
