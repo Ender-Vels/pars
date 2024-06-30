@@ -6,20 +6,6 @@ from datetime import datetime, timedelta
 from binance.client import Client
 import threading
 
-# Встановлення API ключів через бічну панель
-st.sidebar.header("API ключі")
-api_key = st.sidebar.text_input("API ключ")
-api_secret = st.sidebar.text_input("Секретний ключ")
-
-# Ініціалізація клієнта Binance API
-client = None
-if api_key and api_secret:
-    try:
-        client = Client(api_key, api_secret)
-        st.sidebar.success("Підключення до API успішно")
-    except Exception as e:
-        st.sidebar.error(f"Помилка підключення до API: {str(e)}")
-
 # Встановлення параметрів копіювання угод
 st.header("Налаштування копіювання угод")
 trader_url = st.text_input("Посилання на трейдера")
@@ -148,10 +134,6 @@ def open_trade(trade, trade_volume, leverage, symbol, side, position_side):
 
 # Функція для основного циклу копіювання угод
 def start_trading():
-    if not (client and trader_url):
-        st.warning("Будь ласка, вкажіть API ключі та посилання на трейдера")
-        return
-    st.success("Програма запущена успішно!")
     while True:
         try:
             trade_data = parse_trade_history(trader_url)
@@ -171,10 +153,15 @@ if st.button("Запустити програму"):
     if not (api_key and api_secret and trader_url):
         st.warning("Будь ласка, введіть всі необхідні дані")
     else:
-        trading_thread = threading.Thread(target=start_trading)
-        trading_thread.daemon = True
-        trading_thread.start()
-        st.success("Програма запущена у фоновому режимі")
+        try:
+            client = Client(api_key, api_secret)
+            st.success("Підключення до API успішно")
+            trading_thread = threading.Thread(target=start_trading)
+            trading_thread.daemon = True
+            trading_thread.start()
+            st.success("Програма запущена у фоновому режимі")
+        except Exception as e:
+            st.error(f"Помилка підключення до API: {str(e)}")
 
 # Виведення інформації про налаштування
 if trader_url:
