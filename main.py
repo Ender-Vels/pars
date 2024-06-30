@@ -155,7 +155,13 @@ if st.button("Запустити програму"):
         # Основний цикл програми
         if client and trader_url:
             try:
-                while st.button("Зупинити програму"):
+                is_running = True
+                stop_button = st.button("Зупинити програму")
+                while is_running:
+                    if stop_button:
+                        is_running = False
+                        st.write("Програму зупинено")
+                        break
                     trade_data = parse_trade_history(trader_url)
                     aggregated_trades = aggregate_trades(trade_data, 2)
                     for trade in aggregated_trades:
