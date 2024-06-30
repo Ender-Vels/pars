@@ -4,6 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from binance.client import Client
+import threading
 
 # Встановлення API ключів через бічну панель
 st.sidebar.header("API ключі")
@@ -145,10 +146,14 @@ def open_trade(trade, trade_volume, leverage, symbol, side, position_side):
     except Exception as e:
         st.write(f"Помилка під час відкриття угоди: {str(e)}")
 
-# Основний цикл програми
-if client and trader_url:
-    try:
-        while True:
+# Функція для основного циклу копіювання угод
+def start_trading():
+    if not (client and trader_url):
+        st.warning("Будь ласка, вкажіть API ключі та посилання на трейдера")
+        return
+    st.success("Програма запущена успішно!")
+    while True:
+        try:
             trade_data = parse_trade_history(trader_url)
             aggregated_trades = aggregate_trades(trade_data, 2)
             for trade in aggregated_trades:
@@ -158,8 +163,18 @@ if client and trader_url:
                 position_side = "LONG"
                 open_trade(trade, trade_volume, leverage, symbol, side, position_side)
             time.sleep(5)
-    except Exception as e:
-        st.write(f"Помилка в основному циклі програми: {str(e)}")
+        except Exception as e:
+            st.write(f"Помилка в основному циклі програми: {str(e)}")
+
+# Кнопка запуску програми
+if st.button("Запустити програму"):
+    if not (api_key and api_secret and trader_url):
+        st.warning("Будь ласка, введіть всі необхідні дані")
+    else:
+        trading_thread = threading.Thread(target=start_trading)
+        trading_thread.daemon = True
+        trading_thread.start()
+        st.success("Програма запущена у фоновому режимі")
 
 # Виведення інформації про налаштування
 if trader_url:
@@ -167,5 +182,5 @@ if trader_url:
     st.write(f"Баланс трейдера: {trader_balance}")
     st.write(f"Баланс власного портфеля: {user_balance}")
     st.write(f"Кредитне плече: {leverage}")
-    st.write(f"Тільки закриття угод: {close_only_mode}")
-    st.write(f"Копіювати угоди в зворотньому напрямку: {reverse_mode}")
+    st.write(f"Тільки закриття угод: {'Так' if close_only_mode else 'Ні'}")
+    st.write(f"Копіювати угоди в зворотньому напрямку: {'Так' if reverse_mode else 'Ні'}")
