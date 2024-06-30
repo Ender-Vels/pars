@@ -3,101 +3,100 @@ import requests
 import time
 import hmac
 import hashlib
+from urllib.parse import urlencode
 
-# Function to fetch trade data from Binance API
-def fetch_trade_data(api_endpoint, trader_id):
+# Streamlit UI
+st.title("Binance Copy Trading Bot")
+st.write("Automatically copy trades from a Binance trader and execute them in your portfolio.")
+
+api_key = st.text_input("Your Binance API Key")
+api_secret = st.text_input("Your Binance API Secret", type="password")
+trader_api_endpoint = st.text_input("Trader API Endpoint")
+leverage = st.number_input("Leverage", min_value=1, max_value=125, value=1)
+trader_portfolio_value = st.number_input("Trader Portfolio Value", min_value=0.0, value=1000.0)
+your_portfolio_value = st.number_input("Your Portfolio Value", min_value=0.0, value=1000.0)
+
+only_close_trades = st.checkbox("Only Close Trades")
+reverse_trades = st.checkbox("Reverse Trades")
+
+start_button = st.button("Start Copy Trading")
+
+# Binance API endpoints
+base_url = "https://api.binance.com"
+
+def create_signature(query_string, secret):
+    return hmac.new(secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+
+def binance_request(method, endpoint, params=None):
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        "X-MBX-APIKEY": api_key
     }
-    params = {
-        'traderId': trader_id,
-        'limit': 1000
-    }
-    response = requests.get(api_endpoint, headers=headers, params=params)
-    trades = response.json()['data']
-    return trades
-
-# Function to summarize trades within a 2-second interval
-def summarize_trades(trades):
-    summarized_trades = []
-    for i in range(len(trades) - 1):
-        current_trade = trades[i]
-        next_trade = trades[i + 1]
-        if (next_trade['time'] - current_trade['time']) <= 2000:
-            current_trade['quantity'] += next_trade['quantity']
-        else:
-            summarized_trades.append(current_trade)
-    return summarized_trades
-
-# Function to execute trades on Binance
-def execute_trade(api_key, api_secret, symbol, side, quantity, position_side):
-    base_url = 'https://api.binance.com'
-    endpoint = '/api/v3/order'
-    params = {
-        'symbol': symbol,
-        'side': side,
-        'type': 'MARKET',
-        'quantity': quantity,
-        'positionSide': position_side,
-        'timestamp': int(time.time() * 1000)
-    }
-    query_string = '&'.join([f"{key}={value}" for key, value in params.items()])
-    signature = hmac.new(api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
-    params['signature'] = signature
-    headers = {
-        'X-MBX-APIKEY': api_key
-    }
-    response = requests.post(base_url + endpoint, headers=headers, params=params)
+    query_string = urlencode(params) if params else ''
+    signature = create_signature(query_string, api_secret)
+    url = f"{base_url}{endpoint}?{query_string}&signature={signature}"
+    response = requests.request(method, url, headers=headers)
     return response.json()
 
-# Streamlit Web Interface
-st.title("Binance Copy Trading Bot")
-st.header("Enter your API details and settings")
+def get_trader_trades(trader_api_endpoint):
+    try:
+        response = binance_request("GET", trader_api_endpoint)
+        trades = response.get("trades", [])
+        return trades
+    except Exception as e:
+        st.error(f"Error fetching trader trades: {str(e)}")
+        return []
 
-api_key = st.text_input("API Key")
-api_secret = st.text_input("API Secret", type="password")
-leverage = st.number_input("Leverage", min_value=1, max_value=125)
-trader_portfolio = st.text_input("Trader Portfolio URL")
-trader_portfolio_sum = st.number_input("Trader Portfolio Sum")
-own_portfolio_sum = st.number_input("Own Portfolio Sum")
+def aggregate_trades(trades):
+    aggregated_trades = {}
+    current_time = int(time.time() * 1000)
+    for trade in trades:
+        trade_time = int(trade["time"])
+        if current_time - trade_time <= 2000:
+            key = (trade["symbol"], trade["side"])
+            if key not in aggregated_trades:
+                aggregated_trades[key] = trade
+            else:
+                aggregated_trades[key]["quantity"] += trade["quantity"]
+                aggregated_trades[key]["price"] = (aggregated_trades[key]["price"] + trade["price"]) / 2
+    return list(aggregated_trades.values())
 
-# Example API endpoint for fetching trade data
-api_endpoint = "https://www.binance.com/bapi/copytrading/v1/public/copytrader/trade-orders"
-
-copy_trading_active = False
-
-if st.button("Start Copy Trading"):
-    copy_trading_active = True
-    st.write("Started Copy Trading")
-
-while copy_trading_active:
-    trades = fetch_trade_data(api_endpoint, trader_portfolio)
-    summarized_trades = summarize_trades(trades)
-    for trade in summarized_trades:
-        side = 'BUY' if 'Buy/long' in trade['side'] else 'SELL'
-        position_side = 'LONG' if 'long' in trade['side'] else 'SHORT'
-        quantity = trade['quantity'] * (own_portfolio_sum / trader_portfolio_sum)
-        execute_trade(api_key, api_secret, trade['symbol'], side, quantity, position_side)
-    time.sleep(2)
-
-if st.button("Stop Copy Trading"):
-    copy_trading_active = False
-    st.write("Stopped Copy Trading")
-    # Implement stop functionality
-
-# To set leverage
-if st.button("Set Leverage"):
-    base_url = 'https://api.binance.com'
-    endpoint = '/sapi/v1/margin/max-leverage'
+def execute_trade(trade, position_side):
+    side = "BUY" if trade["side"] == "buy" else "SELL"
+    if reverse_trades:
+        side = "SELL" if side == "BUY" else "BUY"
     params = {
-        'leverage': leverage,
-        'timestamp': int(time.time() * 1000)
+        "symbol": trade["symbol"],
+        "side": side,
+        "type": "MARKET",
+        "quantity": trade["quantity"],
+        "positionSide": position_side,
+        "timestamp": int(time.time() * 1000)
     }
-    query_string = '&'.join([f"{key}={value}" for key, value in params.items()])
-    signature = hmac.new(api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
-    params['signature'] = signature
-    headers = {
-        'X-MBX-APIKEY': api_key
-    }
-    response = requests.post(base_url + endpoint, headers=headers, params=params)
-    st.write(response.json())
+    response = binance_request("POST", "/api/v3/order", params)
+    return response
+
+def main():
+    if start_button:
+        last_trade_time = 0
+        while True:
+            trades = get_trader_trades(trader_api_endpoint)
+            if trades:
+                new_trades = [trade for trade in trades if int(trade["time"]) > last_trade_time]
+                if new_trades:
+                    aggregated_trades = aggregate_trades(new_trades)
+                    for trade in aggregated_trades:
+                        if trade["side"] in ["buy", "long"]:
+                            if not only_close_trades:
+                                execute_trade(trade, "LONG")
+                        elif trade["side"] in ["sell", "short"]:
+                            execute_trade(trade, "LONG")
+                        elif trade["side"] in ["buy", "long"]:
+                            if not only_close_trades:
+                                execute_trade(trade, "SHORT")
+                        elif trade["side"] in ["sell", "long"]:
+                            execute_trade(trade, "SHORT")
+                    last_trade_time = int(new_trades[-1]["time"])
+            time.sleep(2)
+
+if __name__ == "__main__":
+    main()
