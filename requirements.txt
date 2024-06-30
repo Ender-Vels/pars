@@ -1,0 +1,6 @@
+streamlit
+requests
+json
+time
+datetime
+binance.client
