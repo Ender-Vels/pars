@@ -19,8 +19,8 @@ class ScrapeTask:
         self.scraping = False
 
     def scrape_and_display_data(self):
-        try:
-            while self.scraping:
+        while self.scraping:
+            try:
                 response = self.session.get(self.taskDTO['link'])
                 if response.status_code != 200:
                     st.error(f"Error fetching the page: {response.status_code}")
@@ -49,32 +49,38 @@ class ScrapeTask:
                         self.processed_orders.add(order_id)
 
                 if new_data:
-                    st.write("New data found:")
                     for data in new_data:
                         st.write(data)
                 else:
                     st.write("No new data found.")
 
-                time.sleep(5)  # Check for new orders every 5 seconds
+                # Check if the stop button was pressed
+                if not st.session_state.get('scraping', True):
+                    self.scraping = False
+                else:
+                    time.sleep(5)  # Check for new orders every 5 seconds
 
-        except Exception as e:
-            st.error(f"Error scraping and displaying data: {e}")
+            except Exception as e:
+                st.error(f"Error scraping and displaying data: {e}")
+                self.scraping = False
 
 # Streamlit UI
 st.title("Binance Trade History Scraper")
 
 url = st.text_input("Enter the Binance copy trading URL:", "https://www.binance.com/en/copy-trading/lead-details/3955388570936769793")
+if 'scraping' not in st.session_state:
+    st.session_state.scraping = False
+
 start_button = st.button("Start Scraping")
 stop_button = st.button("Stop Scraping")
 
-scrape_task = None
-
 if start_button:
+    st.session_state.scraping = True
     taskDTO = {'link': url}
     scrape_task = ScrapeTask(taskDTO)
     st.write("Scraping started...")
     scrape_task.start_scraping()
 
-if stop_button and scrape_task:
-    scrape_task.stop_scraping()
+if stop_button:
+    st.session_state.scraping = False
     st.write("Scraping stopped.")
