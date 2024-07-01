@@ -2,10 +2,12 @@ import streamlit as st
 import requests
 import json
 import time
-from datetime import datetime, timedelta
-from binance.client import Client
-from binance.enums import *
 import threading
+from datetime import datetime, timedelta
+from binance_f import RequestClient, SubscriptionClient
+from binance_f.constant.test import *
+from binance_f.base.printobject import *
+from binance_f.model.constant import *
 
 # Введення API ключа та секретного ключа
 st.sidebar.header("API ключі")
@@ -15,8 +17,8 @@ api_secret = st.sidebar.text_input("Секретний ключ", type="password
 # Функція для перевірки працездатності ключів
 def check_api_keys(api_key, api_secret):
     try:
-        client = Client(api_key, api_secret)
-        client.futures_account()
+        request_client = RequestClient(api_key=api_key, api_secret=api_secret)
+        result = request_client.get_balance()
         return True
     except Exception as e:
         st.error(f"Помилка валідації API ключів: {str(e)}")
@@ -82,7 +84,7 @@ def get_trade_volume(trade, trader_balance, user_balance):
     return (trade["quantity"] * user_balance / trader_balance) * multiplier
 
 # Функція для відкриття угоди
-def open_trade(client, trade, trade_volume, leverage, symbol, side, position_side):
+def open_trade(request_client, trade, trade_volume, leverage, symbol, side, position_side):
     try:
         if close_only_mode and (trade["side"] == "Open long" or trade["side"] == "Open short"):
             return
@@ -103,40 +105,40 @@ def open_trade(client, trade, trade_volume, leverage, symbol, side, position_sid
         # Опції відкриття угоди
         if trade["side"] in ["Open long", "Buy/long"]:
             if trade["realizedProfit"] == 0.0000000 and datetime.now() - timedelta(minutes=1) < datetime.fromtimestamp(int(trade["time"]) / 1000):
-                order = client.futures_create_order(
+                result = request_client.post_order(
                     symbol=symbol,
                     side=side,
-                    type='MARKET',
+                    ordertype=OrderType.MARKET,  # Використовуємо OrderType.MARKET замість ORDERTYPE_MARKET
                     quantity=trade_volume,
                     positionSide=position_side
                 )
                 st.write(f"Відкрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Close long", "Sell/Short"]:
             if trade["realizedProfit"] != 0.0000000:
-                order = client.futures_create_order(
+                result = request_client.post_order(
                     symbol=symbol,
                     side=side,
-                    type='MARKET',
+                    ordertype=OrderType.MARKET,  # Використовуємо OrderType.MARKET замість ORDERTYPE_MARKET
                     quantity=trade_volume,
                     positionSide=position_side
                 )
                 st.write(f"Закрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Open short", "Buy/short"]:
             if trade["realizedProfit"] == 0.0000000 and datetime.now() - timedelta(minutes=1) < datetime.fromtimestamp(int(trade["time"]) / 1000):
-                order = client.futures_create_order(
+                result = request_client.post_order(
                     symbol=symbol,
                     side=side,
-                    type='MARKET',
+                    ordertype=OrderType.MARKET,  # Використовуємо OrderType.MARKET замість ORDERTYPE_MARKET
                     quantity=trade_volume,
                     positionSide=position_side
                 )
                 st.write(f"Відкрито {trade_volume} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Close short", "Buy/Long"]:
             if trade["realizedProfit"] != 0.0000000:
-                order = client.futures_create_order(
+                result = request_client.post_order(
                     symbol=symbol,
                     side=side,
-                    type='MARKET',
+                    ordertype=OrderType.MARKET,  # Використовуємо OrderType.MARKET замість ORDERTYPE_MARKET
                     quantity=trade_volume,
                     positionSide=position_side
                 )
@@ -145,7 +147,7 @@ def open_trade(client, trade, trade_volume, leverage, symbol, side, position_sid
         st.write(f"Помилка під час відкриття угоди: {str(e)}")
 
 # Функція для закриття угоди
-def close_trade(client, trade, symbol, side, position_side):
+def close_trade(request_client, trade, symbol, side, position_side):
     try:
         if reverse_mode:
             if trade["side"] in ["Open long", "Buy/long"]:
@@ -163,81 +165,62 @@ def close_trade(client, trade, symbol, side, position_side):
         
         # Опції закриття угоди
         if trade["side"] in ["Close long", "Sell/Short"]:
-            order = client.futures_create_order(
-                symbol=symbol,
-                side=side,
-                type='MARKET',
-                quantity=trade["quantity"],
-                positionSide=position_side
-            )
-            st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
+            if trade["realizedProfit"] != 0.0000000:
+                result = request_client.post_order(
+                    symbol=symbol,
+                    side=side,
+                    ordertype=OrderType.MARKET,  # Використовуємо OrderType.MARKET замість ORDERTYPE_MARKET
+                    quantity=trade["quantity"],
+                    positionSide=position_side
+                )
+                st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
         elif trade["side"] in ["Close short", "Buy/Long"]:
-            order = client.futures_create_order(
-                symbol=symbol,
-                side=side,
-                type='MARKET',
-                quantity=trade["quantity"],
-                positionSide=position_side
-            )
-            st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
+            if trade["realizedProfit"] != 0.0000000:
+                result = request_client.post_order(
+                    symbol=symbol,
+                    side=side,
+                    ordertype=OrderType.MARKET,  # Використовуємо OrderType.MARKET замість ORDERTYPE_MARKET
+                    quantity=trade["quantity"],
+                    positionSide=position_side
+                )
+                st.write(f"Закрито {trade['quantity']} {trade['quantityAsset']} {position_side} для {symbol}")
     except Exception as e:
         st.write(f"Помилка під час закриття угоди: {str(e)}")
 
-# Функція для основного циклу копіювання угод
-def start_trading(api_key, api_secret):
-    client = Client(api_key, api_secret)
-    while True:
-        try:
-            trade_data = parse_trade_history(trader_url)
-            aggregated_trades = aggregate_trades(trade_data, 2)
-            for trade in aggregated_trades:
-                symbol = trade["symbol"]
-                trade_volume = get_trade_volume(trade, trader_balance, user_balance)
-                side = "BUY"
-                position_side = "LONG"
-                
-                if trade["side"] in ["Close long", "Sell/Short"]:
-                    close_trade(client, trade, symbol, side, position_side)
-                elif trade["side"] in ["Close short", "Buy/Long"]:
-                    close_trade(client, trade, symbol, side, position_side)
-                else:
-                    open_trade(client, trade, trade_volume, leverage, symbol, side, position_side)
-                    
-            time.sleep(5)
-        except Exception as e:
-            st.write(f"Помилка в основному циклі програми: {str(e)}")
+# Функція для парсингу та копіювання угод
+def copy_trades():
+    try:
+        if not api_key or not api_secret:
+            st.warning("Будь ласка, введіть API ключ та секретний ключ")
+            return
+        if not check_api_keys(api_key, api_secret):
+            return
+        
+        request_client = RequestClient(api_key=api_key, api_secret=api_secret)
+        trade_data = parse_trade_history(trader_url)
+        if not trade_data:
+            st.warning("Не вдалося отримати дані трейдера. Перевірте посилання на трейдера.")
+            return
+        
+        time_interval = 2  # Інтервал часу для об'єднання транзакцій (в секундах)
+        aggregated_trades = aggregate_trades(trade_data, time_interval)
+        
+        for trade in aggregated_trades:
+            trade_volume = get_trade_volume(trade, trader_balance, user_balance)
+            open_trade(request_client, trade, trade_volume, leverage, trade["symbol"], trade["side"], trade["positionSide"])
+    
+    except Exception as e:
+        st.write(f"Помилка під час копіювання угод: {str(e)}")
 
-# Функція для зупинки основного циклу
-def stop_trading():
-    st.session_state.is_running = False
-    st.success("Програма зупинена")
+# Інтерфейс користувача для керування програмою
+st.header("Керування програмою")
+start_copying = st.button("Почати копіювання угод")
+stop_copying = st.button("Зупинити копіювання угод")
 
-# Кнопка запуску програми
-if st.button("Запустити програму"):
-    if not (api_key and api_secret and trader_url):
-        st.warning("Будь ласка, введіть всі необхідні дані")
-    elif not check_api_keys(api_key, api_secret):
-        st.warning("Недійсні API ключі")
-    else:
-        try:
-            st.session_state.is_running = True
-            trading_thread = threading.Thread(target=start_trading, args=(api_key, api_secret))
-            trading_thread.daemon = True
-            trading_thread.start()
-            st.success("Програма запущена у фоновому режимі")
-        except Exception as e:
-            st.error(f"Помилка підключення до API: {str(e)}")
+if start_copying:
+    st.write("Початок копіювання угод...")
+    copy_thread = threading.Thread(target=copy_trades)
+    copy_thread.start()
 
-# Кнопка зупинки програми
-if st.button("Зупинити програму"):
-    if hasattr(st.session_state, 'is_running') and st.session_state.is_running:
-        stop_trading()
-
-# Виведення інформації про налаштування копіювання угод
-if trader_url:
-    st.write(f"Посилання на трейдера: {trader_url}")
-    st.write(f"Баланс трейдера: {trader_balance}")
-    st.write(f"Баланс власного портфеля: {user_balance}")
-    st.write(f"Кредитне плече: {leverage}")
-    st.write(f"Тільки закриття угод: {'Так' if close_only_mode else 'Ні'}")
-    st.write(f"Копіювати угоди в зворотньому напрямку: {'Так' if reverse_mode else 'Ні'}")
+if stop_copying:
+    st.write("Зупинка копіювання угод...")
