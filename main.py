@@ -4,7 +4,7 @@ import json
 import time
 import threading
 from datetime import datetime, timedelta
-from binance_f import RequestClient
+from binance_f import RequestClient, SubscriptionClient
 from binance_f.constant.test import *
 from binance_f.base.printobject import *
 from binance_f.model.constant import *
