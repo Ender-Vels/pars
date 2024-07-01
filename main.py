@@ -1,61 +1,13 @@
 import streamlit as st
-import time
-import csv
-import re
-import chromedriver_autoinstaller
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
+import requests
 from bs4 import BeautifulSoup
+import re
 
-class ScrapeTask:
-    def __init__(self):
-        self.driver = None
-
-    def initialize_driver(self):
-        try:
-            chromedriver_autoinstaller.install()  # Встановлення chromedriver автоматично
-            chrome_options = Options()
-            chrome_options.add_argument("--no-sandbox")
-            self.driver = webdriver.Chrome(options=chrome_options)
-        except Exception as e:
-            st.error(f"Error initializing WebDriver: {e}")
-            st.stop()
-
-    def start_scraping(self, link):
-        try:
-            self.driver.get(link)
-            self.accept_cookies()
-            self.navigate_to_trade_history()
-            self.scrape_and_show()
-        except Exception as e:
-            st.error(f"Error scraping data: {e}")
-        finally:
-            if self.driver:
-                self.driver.quit()
-
-    def accept_cookies(self):
-        try:
-            time.sleep(2)
-            accept_btn = self.find_element_with_retry(By.ID, "onetrust-accept-btn-handler")
-            accept_btn.click()
-            time.sleep(2)
-        except Exception as e:
-            st.warning(f"Warning: Error accepting cookies: {e}")
-
-    def navigate_to_trade_history(self):
-        try:
-            move_to_trade_history = self.find_element_with_retry(By.CSS_SELECTOR, "#tab-tradeHistory > div")
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", move_to_trade_history)
-            move_to_trade_history.click()
-            time.sleep(2)
-        except Exception as e:
-            st.warning(f"Warning: Trade history tab not found: {e}")
-
-    def scrape_and_show(self):
-        try:
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+def scrape_trade_history(link):
+    try:
+        response = requests.get(link)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
             orders = soup.select(".css-g5h8k8 > div > div > div > table > tbody > tr")
             
             if not orders:
@@ -72,21 +24,10 @@ class ScrapeTask:
                 price = order.select_one("td:nth-child(4)").text.strip()
                 quantity = order.select_one("td:nth-child(5)").text.strip()
                 st.write(f"{time}\t{symbol}\t{side}\t{price}\t{quantity}")
-
-        except Exception as e:
-            st.error(f"Error scraping and showing data: {e}")
-
-    def find_element_with_retry(self, by, selector, max_attempts=3):
-        attempts = 0
-        while attempts < max_attempts:
-            try:
-                element = self.driver.find_element(by, selector)
-                return element
-            except Exception as e:
-                attempts += 1
-                st.warning(f"Warning: Error finding element {selector} (Attempt {attempts}/{max_attempts}): {e}")
-                time.sleep(2)
-        raise NoSuchElementException(f"Element {selector} not found after {max_attempts} attempts")
+        else:
+            st.error(f"Error fetching trade history: Status code {response.status_code}")
+    except Exception as e:
+        st.error(f"Error scraping data: {e}")
 
 # Main Streamlit application
 def main():
@@ -95,9 +36,7 @@ def main():
     link = st.text_input("Enter the Binance trade history link:")
     if st.button("Start Scraping"):
         if link:
-            scraper = ScrapeTask()
-            scraper.initialize_driver()
-            scraper.start_scraping(link)
+            scrape_trade_history(link)
         else:
             st.warning("Please enter a Binance trade history link.")
 
