@@ -8,6 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 import os
+import json
 
 class ScrapeTask:
     def __init__(self, taskDTO):
