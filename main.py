@@ -51,16 +51,7 @@ class ScrapeTask:
                 if new_data:
                     st.write(new_data)
 
-                # Simulate clicking next page button
-                next_page_link = soup.select_one("div.bn-pagination-next a")
-                if next_page_link:
-                    next_page_url = next_page_link['href']
-                    self.taskDTO['link'] = next_page_url
-                else:
-                    st.info("No more pages to scrape.")
-                    break
-
-                time.sleep(2)
+                time.sleep(5)  # Check for new orders every 5 seconds
 
         except Exception as e:
             st.error(f"Error scraping and displaying data: {e}")
