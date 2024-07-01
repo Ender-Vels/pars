@@ -1,71 +1,32 @@
 import time
 import re
-import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
+import requests
 from bs4 import BeautifulSoup
+import streamlit as st
 
 class ScrapeTask:
     def __init__(self, taskDTO):
         self.taskDTO = taskDTO
-        self.driver = None
+        self.session = requests.Session()
         self.processed_orders = set()  # Set to store processed orders
         self.scraping = False
 
-    def initialize_driver(self):
-        try:
-            chrome_options = Options()
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--headless")  # Run in headless mode for Streamlit compatibility
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.get(self.taskDTO['link'])
-        except Exception as e:
-            st.error(f"Error initializing WebDriver: {e}")
-
     def start_scraping(self):
         self.scraping = True
-        self.accept_cookies()
-        self.navigate_to_trade_history()
         self.scrape_and_display_data()
 
     def stop_scraping(self):
         self.scraping = False
-        if self.driver:
-            self.driver.quit()
-
-    def accept_cookies(self):
-        try:
-            time.sleep(2)
-            accept_btn = self.find_element_with_retry(By.ID, "onetrust-accept-btn-handler")
-            accept_btn.click()
-            time.sleep(2)
-        except NoSuchElementException:
-            st.info("Trying alternative selector for accept cookies button.")
-            try:
-                accept_btn = self.find_element_with_retry(By.CSS_SELECTOR, ".accept-btn-handler")
-                accept_btn.click()
-                time.sleep(2)
-            except Exception as e:
-                st.error(f"Error accepting cookies: {e}")
-
-    def navigate_to_trade_history(self):
-        try:
-            move_to_trade_history = self.find_element_with_retry(By.CSS_SELECTOR, "#tab-tradeHistory > div")
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", move_to_trade_history)
-            move_to_trade_history.click()
-            time.sleep(2)
-        except Exception as e:
-            st.error(f"Trade history tab not found: {e}")
-            self.driver.refresh()
-            time.sleep(2)
-            self.navigate_to_trade_history()
 
     def scrape_and_display_data(self):
         try:
             while self.scraping:
-                soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+                response = self.session.get(self.taskDTO['link'])
+                if response.status_code != 200:
+                    st.error(f"Error fetching the page: {response.status_code}")
+                    break
+
+                soup = BeautifulSoup(response.content, 'html.parser')
                 orders = soup.select(".css-g5h8k8 > div > div > div > table > tbody > tr")
                 new_data = []
 
@@ -90,28 +51,19 @@ class ScrapeTask:
                 if new_data:
                     st.write(new_data)
 
-                next_page_button = self.find_element_with_retry(By.CSS_SELECTOR, "div.bn-pagination-next")
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", next_page_button)
-                next_page_button.click()
+                # Simulate clicking next page button
+                next_page_link = soup.select_one("div.bn-pagination-next a")
+                if next_page_link:
+                    next_page_url = next_page_link['href']
+                    self.taskDTO['link'] = next_page_url
+                else:
+                    st.info("No more pages to scrape.")
+                    break
+
                 time.sleep(2)
 
         except Exception as e:
             st.error(f"Error scraping and displaying data: {e}")
-
-        finally:
-            if self.driver:
-                self.driver.quit()
-
-    def find_element_with_retry(self, by, selector, max_attempts=3):
-        attempts = 0
-        while attempts < max_attempts:
-            try:
-                element = self.driver.find_element(by, selector)
-                return element
-            except Exception as e:
-                attempts += 1
-                time.sleep(2)
-        raise NoSuchElementException(f"Element {selector} not found after {max_attempts} attempts")
 
 # Streamlit UI
 st.title("Binance Trade History Scraper")
@@ -125,7 +77,6 @@ scrape_task = None
 if start_button:
     taskDTO = {'link': url}
     scrape_task = ScrapeTask(taskDTO)
-    scrape_task.initialize_driver()
     st.write("Scraping started...")
     scrape_task.start_scraping()
 
