@@ -1,60 +1,61 @@
 import streamlit as st
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-import time
+from scrapydo import setup, run_spider
+from scrapy import signals
+from scrapy.signalmanager import dispatcher
+from scrapy import Spider, Request
 
-class LastOrder:
-    def __init__(self):
-        self.time = None
-        self.symbol = None
-        self.side = None
-        self.price = None
-        self.quantity = None
+# Клас для Scrapy Spider
+class BinanceSpider(Spider):
+    name = 'binance'
+    allowed_domains = ['binance.com']
+    start_urls = ['https://www.binance.com/en/copy-trading/lead-details/3955388570936769793']
 
-class ScrapeTask:
-    def __init__(self, link):
-        self.link = link
-        self.last_order = LastOrder()
-        self.driver = None
+    def parse(self, response):
+        last_orders = []
 
-    def initialize_driver(self):
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        self.driver = webdriver.Chrome(options=chrome_options)
-        self.driver.get(self.link)
+        # Витягнення даних
+        for row in response.css('.css-g5h8k8 > div > div > div > table > tbody > tr'):
+            time = row.css('td:nth-child(1)::text').get()
+            symbol = row.css('td:nth-child(2)::text').get()
+            side = row.css('td:nth-child(3)::text').get()
+            price = row.css('td:nth-child(4)::text').get()
+            quantity = row.css('td:nth-child(5)::text').get()
 
-    def scrape_last_order(self):
-        time.sleep(2)  # Give time for the page to load
-        soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        
-        # Modify this part to scrape your specific data
-        # Example:
-        order_row = soup.select_one('.css-g5h8k8 > div > div > div > table > tbody > tr:nth-child(1)')
-        if order_row:
-            self.last_order.time = order_row.select_one('td:nth-child(1)').text.strip()
-            self.last_order.symbol = order_row.select_one('td:nth-child(2)').text.strip()
-            self.last_order.side = order_row.select_one('td:nth-child(3)').text.strip()
-            self.last_order.price = order_row.select_one('td:nth-child(4)').text.strip()
-            self.last_order.quantity = order_row.select_one('td:nth-child(5)').text.strip()
-        else:
-            st.error("No orders found or elements missing in the table.")
+            last_orders.append({
+                'time': time,
+                'symbol': symbol,
+                'side': side,
+                'price': price,
+                'quantity': quantity
+            })
 
-    def run(self):
-        self.initialize_driver()
-        self.scrape_last_order()
-        self.driver.quit()
+        # Передача результатів через сигнал
+        dispatcher.send(signal=signals.spider_closed, sender=self, last_orders=last_orders)
 
+# Функція для відображення даних у Streamlit
 def main():
-    st.title('Binance Trade Scraper')
+    st.title('Додаток для відображення даних Binance')
 
-    link = st.text_input('Enter Binance trade history URL:')
-    if st.button('Start Scraping'):
-        scraper = ScrapeTask(link)
-        scraper.run()
-        st.success('Scraping complete.')
-        st.write(f'Last Order: Time={scraper.last_order.time}, Symbol={scraper.last_order.symbol}, Side={scraper.last_order.side}, Price={scraper.last_order.price}, Quantity={scraper.last_order.quantity}')
+    # Налаштування та запуск Scrapy Spider
+    setup()
+    run_spider(BinanceSpider)
+
+    # Отримання даних через сигнал
+    @st.cache(suppress_st_warning=True)
+    def display_results():
+        results = dispatcher.connect(display_results_callback, signal=signals.spider_closed)
+        return results
+
+    def display_results_callback(signal, sender, **kwargs):
+        last_orders = kwargs.get('last_orders', [])
+
+        if last_orders:
+            st.write("Останні замовлення:")
+            st.write(last_orders)
+        else:
+            st.write("Дані ще не витягнуті")
+
+    display_results()
 
 if __name__ == '__main__':
     main()
