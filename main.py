@@ -1,6 +1,8 @@
-import time
-import re
 import streamlit as st
+import time
+import csv
+import re
+import chromedriver_autoinstaller
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -8,35 +10,30 @@ from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 
 class ScrapeTask:
-    def __init__(self, taskDTO):
-        self.taskDTO = taskDTO
+    def __init__(self):
         self.driver = None
-        self.processed_orders = set()  # Set to store processed orders
-        self.scraping = False
 
     def initialize_driver(self):
         try:
+            chromedriver_autoinstaller.install()  # Встановлення chromedriver автоматично
             chrome_options = Options()
             chrome_options.add_argument("--no-sandbox")
             self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.get(self.taskDTO['link'])
         except Exception as e:
             st.error(f"Error initializing WebDriver: {e}")
-            self.scraping = False
+            st.stop()
 
-    def start_scraping(self):
-        self.scraping = True
-        self.initialize_driver()
-        while self.scraping:
-            try:
-                self.accept_cookies()
-                self.navigate_to_trade_history()
-                self.scrape_and_display_data()
-                time.sleep(5)  # Check for new orders every 5 seconds
-
-            except Exception as e:
-                st.error(f"Error scraping and displaying data: {e}")
-                self.scraping = False
+    def start_scraping(self, link):
+        try:
+            self.driver.get(link)
+            self.accept_cookies()
+            self.navigate_to_trade_history()
+            self.scrape_and_show()
+        except Exception as e:
+            st.error(f"Error scraping data: {e}")
+        finally:
+            if self.driver:
+                self.driver.quit()
 
     def accept_cookies(self):
         try:
@@ -55,46 +52,29 @@ class ScrapeTask:
             time.sleep(2)
         except Exception as e:
             st.warning(f"Warning: Trade history tab not found: {e}")
-            self.driver.refresh()
-            self.navigate_to_trade_history()
 
-    def scrape_and_display_data(self):
+    def scrape_and_show(self):
         try:
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             orders = soup.select(".css-g5h8k8 > div > div > div > table > tbody > tr")
             
             if not orders:
-                st.warning("Warning: No trade history orders found. Please check if the link is correct.")
+                st.warning("Warning: No trade history orders found.")
                 return
-
-            new_data = []
-
+            
+            st.write("Trade History:")
+            st.write("Time\tSymbol\tSide\tPrice\tQuantity")
             for order in orders:
                 symbol = order.select_one("td:nth-child(2)").text.strip()
-                
-                # Add space before 'Perpetual' and remove 'Perpetual' if it follows a space
-                symbol = re.sub(r'(\S)Perpetual\b', r'\1 Perpetual', symbol)
-                symbol = re.sub(r'\sPerpetual\b', '', symbol).strip()
-
-                time_ = order.select_one("td:nth-child(1)").text.strip()
+                symbol = re.sub(r'(\S)Perpetual\b', r'\1 Perpetual', symbol).strip()
+                time = order.select_one("td:nth-child(1)").text.strip()
                 side = order.select_one("td:nth-child(3)").text.strip()
                 price = order.select_one("td:nth-child(4)").text.strip()
                 quantity = order.select_one("td:nth-child(5)").text.strip()
-
-                # Check if order already processed
-                order_id = f"{time_}-{symbol}-{side}-{price}-{quantity}"
-                if order_id not in self.processed_orders:
-                    new_data.append([time_, symbol, side, price, quantity])
-                    self.processed_orders.add(order_id)
-
-            if new_data:
-                for data in new_data:
-                    st.write(data)
-            else:
-                st.write("No new data found.")
+                st.write(f"{time}\t{symbol}\t{side}\t{price}\t{quantity}")
 
         except Exception as e:
-            st.error(f"Error scraping and displaying data: {e}")
+            st.error(f"Error scraping and showing data: {e}")
 
     def find_element_with_retry(self, by, selector, max_attempts=3):
         attempts = 0
@@ -108,24 +88,18 @@ class ScrapeTask:
                 time.sleep(2)
         raise NoSuchElementException(f"Element {selector} not found after {max_attempts} attempts")
 
+# Main Streamlit application
+def main():
+    st.title("Trade History Scraper")
 
-# Streamlit UI
-st.title("Binance Trade History Scraper")
+    link = st.text_input("Enter the Binance trade history link:")
+    if st.button("Start Scraping"):
+        if link:
+            scraper = ScrapeTask()
+            scraper.initialize_driver()
+            scraper.start_scraping(link)
+        else:
+            st.warning("Please enter a Binance trade history link.")
 
-url = st.text_input("Enter the Binance copy trading URL:", "https://www.binance.com/en/copy-trading/lead-details/3955388570936769793")
-if 'scraping' not in st.session_state:
-    st.session_state.scraping = False
-
-start_button = st.button("Start Scraping")
-stop_button = st.button("Stop Scraping")
-
-if start_button:
-    st.session_state.scraping = True
-    taskDTO = {'link': url}
-    scrape_task = ScrapeTask(taskDTO)
-    st.write("Scraping started...")
-    scrape_task.start_scraping()
-
-if stop_button:
-    st.session_state.scraping = False
-    st.write("Scraping stopped.")
+if __name__ == "__main__":
+    main()
