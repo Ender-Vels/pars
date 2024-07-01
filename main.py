@@ -49,7 +49,11 @@ class ScrapeTask:
                         self.processed_orders.add(order_id)
 
                 if new_data:
-                    st.write(new_data)
+                    st.write("New data found:")
+                    for data in new_data:
+                        st.write(data)
+                else:
+                    st.write("No new data found.")
 
                 time.sleep(5)  # Check for new orders every 5 seconds
 
